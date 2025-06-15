@@ -1,11 +1,221 @@
+<?php
+// Database configuration
+$host = 'localhost';
+$username = 'root';
+$password = '';
+$database = 'cinema';
+
+// Create connection
+$conn = new mysqli($host, $username, $password, $database);
+
+// Check connection
+if ($conn->connect_error) {
+    die("Connection failed: " . $conn->connect_error);
+}
+
+// Handle payment method update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_payment') {
+    $response = array('success' => false, 'message' => '');
+    
+    try {
+        $ticket_id = $_POST['ticket_id'];
+        $paymode = $_POST['paymode'];
+        $customer_id = $_POST['customer_id'];
+        
+        // Debug log
+        error_log("Updating payment - Ticket ID: $ticket_id, PayMode: $paymode, Customer ID: $customer_id");
+        
+        // Start transaction
+        $conn->begin_transaction();
+        
+        // First check if the ticket exists
+        $checkStmt = $conn->prepare("SELECT Ticket_ID, Customer_ID FROM ticket WHERE Ticket_ID = ?");
+        $checkStmt->bind_param("i", $ticket_id);
+        $checkStmt->execute();
+        $result = $checkStmt->get_result();
+        $ticketData = $result->fetch_assoc();
+        
+        if (!$ticketData) {
+            throw new Exception("Ticket not found with ID: " . $ticket_id);
+        }
+        
+        // If customer_id is null, update it
+        if ($ticketData['Customer_ID'] === null) {
+            $updateStmt = $conn->prepare("UPDATE ticket SET PayMode = ?, Customer_ID = ? WHERE Ticket_ID = ?");
+            $updateStmt->bind_param("sii", $paymode, $customer_id, $ticket_id);
+            
+            if (!$updateStmt->execute()) {
+                throw new Exception("Error updating ticket: " . $updateStmt->error);
+            }
+            
+            if ($updateStmt->affected_rows === 0) {
+                throw new Exception("No changes made to ticket ID: " . $ticket_id);
+            }
+            
+            $updateStmt->close();
+        } else {
+            // Only update PayMode if customer_id already exists
+            $updateStmt = $conn->prepare("UPDATE ticket SET PayMode = ? WHERE Ticket_ID = ?");
+            $updateStmt->bind_param("si", $paymode, $ticket_id);
+            
+            if (!$updateStmt->execute()) {
+                throw new Exception("Error updating payment mode: " . $updateStmt->error);
+            }
+            
+            $updateStmt->close();
+        }
+        
+        // Commit transaction
+        $conn->commit();
+        
+        $response['success'] = true;
+        $response['message'] = 'Payment method updated successfully';
+        error_log("Successfully updated ticket ID: $ticket_id with paymode: $paymode");
+        
+    } catch (Exception $e) {
+        // Rollback transaction on error
+        $conn->rollback();
+        $response['message'] = 'Error updating payment method: ' . $e->getMessage();
+        error_log("Payment update error: " . $e->getMessage());
+    }
+    
+    echo json_encode($response);
+    exit;
+}
+
+// Create seats table if it doesn't exist
+$createSeatsTable = "CREATE TABLE IF NOT EXISTS seats (
+    Seat_No VARCHAR(10) PRIMARY KEY,
+    Customer_ID INT,
+    OR_ID INT,
+    Ticket_ID INT,
+    SeatStatus VARCHAR(20) DEFAULT 'available',
+    FOREIGN KEY (Customer_ID) REFERENCES customer(customer_id),
+    FOREIGN KEY (OR_ID) REFERENCES sales(OR_ID),
+    FOREIGN KEY (Ticket_ID) REFERENCES ticket(Ticket_ID)
+)";
+
+if (!$conn->query($createSeatsTable)) {
+    die("Error creating seats table: " . $conn->error);
+}
+
+// Handle seat booking request
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'book_seats') {
+    $selectedSeats = json_decode($_POST['selected_seats'], true);
+    $response = array('success' => false, 'message' => '');
+    
+    if (empty($selectedSeats)) {
+        $response['message'] = 'No seats selected';
+        echo json_encode($response);
+        exit;
+    }
+    
+    // Start transaction
+    $conn->begin_transaction();
+    
+    try {
+        // Get next available IDs
+        $or_id = getNextId($conn, 'sales', 'OR_ID');
+        $ticket_id = getNextId($conn, 'ticket', 'Ticket_ID');
+        $customer_id = getNextId($conn, 'customer', 'customer_id') - 1; // Subtract 1 from customer_id
+        
+        // Debug log
+        error_log("Booking seats: " . print_r($selectedSeats, true));
+        error_log("Generated IDs - Customer: $customer_id, OR: $or_id, Ticket: $ticket_id");
+        
+        // Create sales record with required information
+        $seatTixNumber = 'KKID-' . str_pad($or_id, 3, '0', STR_PAD_LEFT);
+        $quantity = count($selectedSeats);
+        
+        $stmt = $conn->prepare("INSERT INTO sales (OR_ID, SeatTixNumber, Ticket_ID, Quantity) VALUES (?, ?, ?, ?)");
+        $stmt->bind_param("isii", $or_id, $seatTixNumber, $ticket_id, $quantity);
+        if (!$stmt->execute()) {
+            throw new Exception("Error creating sales record: " . $stmt->error);
+        }
+        $stmt->close();
+        
+        // Create ticket record with all required fields including customer_id
+        $showtime_id = 5; // Set your showtime ID here
+        $stmt = $conn->prepare("INSERT INTO ticket (Ticket_ID, OR_ID, Customer_ID, Showtime_ID) VALUES (?, ?, ?, ?)");
+        $stmt->bind_param("iiii", $ticket_id, $or_id, $customer_id, $showtime_id);
+        if (!$stmt->execute()) {
+            throw new Exception("Error creating ticket record: " . $stmt->error);
+        }
+        $stmt->close();
+        
+        // Now insert/update seats
+        $stmt = $conn->prepare("INSERT INTO seats (Seat_No, Customer_ID, OR_ID, Ticket_ID, SeatStatus) VALUES (?, ?, ?, ?, 'occupied') ON DUPLICATE KEY UPDATE Customer_ID = ?, OR_ID = ?, Ticket_ID = ?, SeatStatus = 'occupied'");
+        
+        foreach ($selectedSeats as $seatNo) {
+            $stmt->bind_param("siiiiii", $seatNo, $customer_id, $or_id, $ticket_id, $customer_id, $or_id, $ticket_id);
+            if (!$stmt->execute()) {
+                throw new Exception("Error updating seat $seatNo: " . $stmt->error);
+            }
+            error_log("Updated seat: $seatNo");
+        }
+        
+        $stmt->close();
+        
+        // Commit transaction
+        $conn->commit();
+        
+        $response['success'] = true;
+        $response['message'] = 'Seats booked successfully';
+        $response['customer_id'] = $customer_id;
+        $response['or_id'] = $or_id;
+        $response['ticket_id'] = $ticket_id;
+        $response['seat_tix_number'] = $seatTixNumber;
+        $response['quantity'] = $quantity;
+        
+    } catch (Exception $e) {
+        // Rollback transaction on error
+        $conn->rollback();
+        $response['message'] = 'Error booking seats: ' . $e->getMessage();
+        error_log("Booking error: " . $e->getMessage());
+    }
+    
+    echo json_encode($response);
+    exit;
+}
+
+// Function to get next available ID
+function getNextId($conn, $table, $column) {
+    $sql = "SELECT MAX($column) as max_id FROM $table";
+    $result = $conn->query($sql);
+    
+    if ($result && $result->num_rows > 0) {
+        $row = $result->fetch_assoc();
+        return ($row['max_id'] ?? 0) + 1;
+    }
+    return 1;
+}
+
+// Get occupied seats for display
+function getOccupiedSeats($conn) {
+    $sql = "SELECT Seat_No FROM seats WHERE SeatStatus = 'occupied'";
+    $result = $conn->query($sql);
+    $occupiedSeats = array();
+    
+    if ($result && $result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $occupiedSeats[] = $row['Seat_No'];
+        }
+    }
+    
+    return $occupiedSeats;
+}
+
+$occupiedSeats = getOccupiedSeats($conn);
+?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Select Seats</title>
-    <style>
-        /* Import Inter font */
+<style>
+    /* Import Inter font */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
 
     * {
@@ -18,7 +228,7 @@
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
           Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
         background-color: #f9fafb;
-        color: #3b4252; /* soft dark slate */
+        color: #3b4252;
     }
 
     .main-container {
@@ -41,7 +251,7 @@
         gap: 20px;
         background-color: #f3f6fc;
         border-bottom: 1px solid #cbd5e1;
-        color: #2e3440; /* deeper slate */
+        color: #2e3440;
     }
 
     .movie-poster {
@@ -59,24 +269,14 @@
         box-shadow: 0 4px 8px rgb(254 180 123 / 0.5);
     }
 
-    .movie-img {
-        flex-shrink: 0;        
-        width: 150px;          
-        height: auto;         
-        border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(254, 180, 123, 0.5);
-        object-fit: cover;     
-        margin-left: 110px;
-    }
-
     .movie-details h2 {
-        color: #5e81ac; /* muted blue */
+        color: #5e81ac;
         font-size: 20px;
         margin-bottom: 5px;
     }
 
     .movie-title {
-        color: #bf616a; /* warm rose */
+        color: #bf616a;
         font-size: 18px;
         font-weight: 700;
         margin-bottom: 5px;
@@ -85,27 +285,27 @@
     .movie-rating,
     .showtime,
     .ticket-price {
-        color: #4c566a; /* slate gray */
+        color: #4c566a;
         font-size: 14px;
         margin-bottom: 5px;
     }
 
     .ticket-price {
-        color: #d08770; /* soft orange */
+        color: #d08770;
         font-weight: 700;
     }
 
     .theater-container {
         padding: 30px;
         text-align: center;
-        color: #434c5e; /* dark grayish blue */
+        color: #434c5e;
     }
 
     .screen-label {
         font-size: 20px;
         font-weight: 700;
         letter-spacing: 8px;
-        color: #3b4252; /* slate */
+        color: #3b4252;
         margin-bottom: 30px;
         text-shadow: 0 0 4px rgba(59, 66, 82, 0.15);
     }
@@ -130,7 +330,7 @@
     .row-label-right {
         width: 20px;
         font-weight: 700;
-        color: #bf616a; /* rose hue */
+        color: #bf616a;
         margin: 0 10px;
         user-select: none;
     }
@@ -149,20 +349,20 @@
     }
 
     .seat.available {
-        background-color: #a3be8c; /* soft green */
+        background-color: #a3be8c;
         border-color: #668a2d;
     }
 
     .seat.occupied {
-        background-color: #ebcb8b; /* muted orange */
-        border-color: #d08770;
+        background-color: #bf616a;
+        border-color: #a54347;
         cursor: not-allowed;
         filter: grayscale(65%);
         box-shadow: none;
     }
 
     .seat.selected {
-        background-color: #ebcb8b; /* accent gold */
+        background-color: #ebcb8b;
         border-color: #d08770;
         box-shadow: 0 0 12px 3px #d0877033;
     }
@@ -295,9 +495,8 @@
     }
 
     .legend-seat.occupied {
-        background-color: #FFB6C1;
-        border-color: #F44336;
-        box-shadow: none;
+        background-color: #bf616a;
+        border-color: #a54347;
     }
 
     .legend-seat.selected {
@@ -418,6 +617,23 @@
         outline: none;
     }
 
+    .btn-modal:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .loading {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid #eceff4;
+        border-radius: 50%;
+        border-top-color: transparent;
+        animation: spin 1s ease-in-out infinite;
+        margin-right: 8px;
+    }
+
     @keyframes fadeIn {
         from { opacity: 0; }
         to { opacity: 1; }
@@ -432,6 +648,10 @@
             opacity: 1;
             transform: translateY(0);
         }
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
     }
 
     @media (max-width: 768px) {
@@ -472,12 +692,12 @@
             width: 100%;
         }
     }
-    </style>
+</style>
 </head>
 <body>
     <div class="main-container">
         <div class="movie-info">
-            <img src="images/5.jpg" alt="Karate Kid: Legends" class="movie-poster">
+        <img src="images/5.jpg" alt="Karate Kid: Legends" class="movie-poster">
             <div class="movie-details">
                 <h2>Bonifacio High Street</h2>
                 <div class="movie-title">Cinema 1, (IMAX) KARATE KID: LEGENDS</div>
@@ -485,53 +705,29 @@
                 <div class="showtime">Saturday, June 21, 2025 9:00 AM</div>
                 <div class="ticket-price">Ticket Price: Php300.00</div>
             </div>
-
         </div>
 
         <div class="theater-container">
             <div class="screen-label">THE SCREEN IS HERE</div>
             
             <div class="theater-layout">
-                <div class="row">
-                    <div class="row-label">A</div>
-                    <div class="seat available" data-seat="A1"></div><div class="seat available" data-seat="A2"></div><div class="seat available" data-seat="A3"></div><div class="seat available" data-seat="A4"></div><div class="seat available" data-seat="A5"></div><div class="seat available" data-seat="A6"></div><div class="seat available" data-seat="A7"></div><div class="seat available" data-seat="A8"></div><div class="seat available" data-seat="A9"></div><div class="seat available" data-seat="A10"></div><div class="seat available" data-seat="A11"></div><div class="seat available" data-seat="A12"></div><div class="seat available" data-seat="A13"></div><div class="seat available" data-seat="A14"></div><div class="seat available" data-seat="A15"></div><div class="seat available" data-seat="A16"></div><div class="seat available" data-seat="A17"></div><div class="seat available" data-seat="A18"></div><div class="seat available" data-seat="A19"></div><div class="seat available" data-seat="A20"></div>
-                    <div class="row-label-right">A</div>
-                </div>
-                <div class="row">
-                    <div class="row-label">B</div>
-                    <div class="seat available" data-seat="B1"></div><div class="seat available" data-seat="B2"></div><div class="seat available" data-seat="B3"></div><div class="seat available" data-seat="B4"></div><div class="seat available" data-seat="B5"></div><div class="seat available" data-seat="B6"></div><div class="seat available" data-seat="B7"></div><div class="seat available" data-seat="B8"></div><div class="seat available" data-seat="B9"></div><div class="seat available" data-seat="B10"></div><div class="seat available" data-seat="B11"></div><div class="seat available" data-seat="B12"></div><div class="seat available" data-seat="B13"></div><div class="seat available" data-seat="B14"></div><div class="seat available" data-seat="B15"></div><div class="seat available" data-seat="B16"></div><div class="seat available" data-seat="B17"></div><div class="seat available" data-seat="B18"></div><div class="seat available" data-seat="B19"></div><div class="seat available" data-seat="B20"></div>
-                    <div class="row-label-right">B</div>
-                </div>
-                <div class="row">
-                    <div class="row-label">C</div>
-                    <div class="seat available" data-seat="C1"></div><div class="seat available" data-seat="C2"></div><div class="seat available" data-seat="C3"></div><div class="seat available" data-seat="C4"></div><div class="seat available" data-seat="C5"></div><div class="seat available" data-seat="C6"></div><div class="seat available" data-seat="C7"></div><div class="seat available" data-seat="C8"></div><div class="seat available" data-seat="C9"></div><div class="seat available" data-seat="C10"></div><div class="seat available" data-seat="C11"></div><div class="seat available" data-seat="C12"></div><div class="seat available" data-seat="C13"></div><div class="seat available" data-seat="C14"></div><div class="seat available" data-seat="C15"></div><div class="seat available" data-seat="C16"></div><div class="seat available" data-seat="C17"></div><div class="seat available" data-seat="C18"></div><div class="seat available" data-seat="C19"></div><div class="seat available" data-seat="C20"></div>
-                    <div class="row-label-right">C</div>
-                </div>
-                <div class="row">
-                    <div class="row-label">D</div>
-                    <div class="seat available" data-seat="D1"></div><div class="seat available" data-seat="D2"></div><div class="seat available" data-seat="D3"></div><div class="seat available" data-seat="D4"></div><div class="seat available" data-seat="D5"></div><div class="seat available" data-seat="D6"></div><div class="seat available" data-seat="D7"></div><div class="seat available" data-seat="D8"></div><div class="seat available" data-seat="D9"></div><div class="seat available" data-seat="D10"></div><div class="seat available" data-seat="D11"></div><div class="seat available" data-seat="D12"></div><div class="seat available" data-seat="D13"></div><div class="seat available" data-seat="D14"></div><div class="seat available" data-seat="D15"></div><div class="seat available" data-seat="D16"></div><div class="seat available" data-seat="D17"></div><div class="seat available" data-seat="D18"></div><div class="seat available" data-seat="D19"></div><div class="seat available" data-seat="D20"></div>
-                    <div class="row-label-right">D</div>
-                </div>
-                <div class="row">
-                    <div class="row-label">E</div>
-                    <div class="seat available" data-seat="E1"></div><div class="seat available" data-seat="E2"></div><div class="seat available" data-seat="E3"></div><div class="seat available" data-seat="E4"></div><div class="seat available" data-seat="E5"></div><div class="seat available" data-seat="E6"></div><div class="seat available" data-seat="E7"></div><div class="seat available" data-seat="E8"></div><div class="seat available" data-seat="E9"></div><div class="seat available" data-seat="E10"></div><div class="seat available" data-seat="E11"></div><div class="seat available" data-seat="E12"></div><div class="seat available" data-seat="E13"></div><div class="seat available" data-seat="E14"></div><div class="seat available" data-seat="E15"></div><div class="seat available" data-seat="E16"></div><div class="seat available" data-seat="E17"></div><div class="seat available" data-seat="E18"></div><div class="seat available" data-seat="E19"></div><div class="seat available" data-seat="E20"></div>
-                    <div class="row-label-right">E</div>
-                </div>
-                <div class="row">
-                    <div class="row-label">F</div>
-                    <div class="seat available" data-seat="F1"></div><div class="seat available" data-seat="F2"></div><div class="seat available" data-seat="F3"></div><div class="seat available" data-seat="F4"></div><div class="seat available" data-seat="F5"></div><div class="seat available" data-seat="F6"></div><div class="seat available" data-seat="F7"></div><div class="seat available" data-seat="F8"></div><div class="seat available" data-seat="F9"></div><div class="seat available" data-seat="F10"></div><div class="seat available" data-seat="F11"></div><div class="seat available" data-seat="F12"></div><div class="seat available" data-seat="F13"></div><div class="seat available" data-seat="F14"></div><div class="seat available" data-seat="F15"></div><div class="seat available" data-seat="F16"></div><div class="seat available" data-seat="F17"></div><div class="seat available" data-seat="F18"></div><div class="seat available" data-seat="F19"></div><div class="seat available" data-seat="F20"></div>
-                    <div class="row-label-right">F</div>
-                </div>
-                <div class="row">
-                    <div class="row-label">G</div>
-                    <div class="seat available" data-seat="G1"></div><div class="seat available" data-seat="G2"></div><div class="seat available" data-seat="G3"></div><div class="seat available" data-seat="G4"></div><div class="seat available" data-seat="G5"></div><div class="seat available" data-seat="G6"></div><div class="seat available" data-seat="G7"></div><div class="seat available" data-seat="G8"></div><div class="seat available" data-seat="G9"></div><div class="seat available" data-seat="G10"></div><div class="seat available" data-seat="G11"></div><div class="seat available" data-seat="G12"></div><div class="seat available" data-seat="G13"></div><div class="seat available" data-seat="G14"></div><div class="seat available" data-seat="G15"></div><div class="seat available" data-seat="G16"></div><div class="seat available" data-seat="G17"></div><div class="seat available" data-seat="G18"></div><div class="seat available" data-seat="G19"></div><div class="seat available" data-seat="G20"></div>
-                    <div class="row-label-right">G</div>
-                </div>
-                <div class="row">
-                    <div class="row-label">H</div>
-                    <div class="seat available" data-seat="H1"></div><div class="seat available" data-seat="H2"></div><div class="seat available" data-seat="H3"></div><div class="seat available" data-seat="H4"></div><div class="seat available" data-seat="H5"></div><div class="seat available" data-seat="H6"></div><div class="seat available" data-seat="H7"></div><div class="seat available" data-seat="H8"></div><div class="seat available" data-seat="H9"></div><div class="seat available" data-seat="H10"></div><div class="seat available" data-seat="H11"></div><div class="seat available" data-seat="H12"></div><div class="seat available" data-seat="H13"></div><div class="seat available" data-seat="H14"></div><div class="seat available" data-seat="H15"></div><div class="seat available" data-seat="H16"></div><div class="seat available" data-seat="H17"></div><div class="seat available" data-seat="H18"></div><div class="seat available" data-seat="H19"></div><div class="seat available" data-seat="H20"></div>
-                    <div class="row-label-right">H</div>
-                </div>
+                <?php
+                $rows = ['AI', 'BJ', 'CK', 'DL', 'EM', 'FN', 'GO', 'HP'];
+                foreach ($rows as $row) {
+                    echo '<div class="row">';
+                    echo '<div class="row-label">' . $row . '</div>';
+                    
+                    for ($i = 1; $i <= 20; $i++) {
+                        $seatNo = $row . $i;
+                        $isOccupied = in_array($seatNo, $occupiedSeats);
+                        $seatClass = $isOccupied ? 'seat occupied' : 'seat available';
+                        echo '<div class="' . $seatClass . '" data-seat="' . $seatNo . '"></div>';
+                    }
+                    
+                    echo '<div class="row-label-right">' . $row . '</div>';
+                    echo '</div>';
+                }
+                ?>
             </div>
 
             <div class="legend">
@@ -575,7 +771,7 @@
     <div id="bookingModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2> Booking Confirmation</h2>
+                <h2>Booking Confirmation</h2>
             </div>
             <div class="modal-body">
                 <div class="confirmation-details">
@@ -606,7 +802,7 @@
                 </div>
                 <div class="modal-buttons">
                     <button class="btn-modal btn-cancel" onclick="closeModal()">Cancel</button>
-                    <button class="btn-modal btn-done" onclick="proceedToPayment()">Done - Proceed to Payment</button>
+                    <button class="btn-modal btn-done" onclick="proceedToPayment()" id="doneBtn">Done - Proceed to Payment</button>
                 </div>
             </div>
         </div>
@@ -622,6 +818,7 @@
         const totalPriceDisplay = document.getElementById('totalPrice');
         const seatQuantityDisplay = document.getElementById('seatQuantity');
         const modal = document.getElementById('bookingModal');
+        const doneBtn = document.getElementById('doneBtn');
 
         // Add click event to each available seat
         seats.forEach(seat => {
@@ -677,13 +874,61 @@
             modal.style.display = 'none';
         }
 
-        function proceedToPayment() {
-            const totalPrice = selectedSeats.length * TICKET_PRICE;
+        async function proceedToPayment() {
+            if (selectedSeats.length === 0) {
+                alert('Please select at least one seat before proceeding.');
+                return;
+            }
 
-        // Save to sessionStorage (optional fallback)
-        sessionStorage.setItem('totalAmount', totalPrice);
-        // Redirect to payment.php with total in URL and movie identifier
-        window.location.href = `payment.php?total=${totalPrice}&movie=seats_karate_kid`;
+            // Show loading state
+            doneBtn.disabled = true;
+            doneBtn.innerHTML = '<span class="loading"></span>Processing...';
+
+            try {
+                // Calculate total amount before resetting selectedSeats
+                const totalAmount = selectedSeats.length * TICKET_PRICE;
+
+                // Send booking request to server
+                const formData = new FormData();
+                formData.append('action', 'book_seats');
+                formData.append('selected_seats', JSON.stringify(selectedSeats));
+
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Update UI to show booked seats as occupied
+                    selectedSeats.forEach(seatNo => {
+                        const seatElement = document.querySelector(`[data-seat="${seatNo}"]`);
+                        if (seatElement) {
+                            seatElement.classList.remove('available', 'selected');
+                            seatElement.classList.add('occupied');
+                        }
+                    });
+
+                    // Reset selection
+                    selectedSeats = [];
+                    updateDisplay();
+                    closeModal();
+
+                    // Redirect to payment page with all necessary parameters
+                    window.location.href = `payment.php?total=${totalAmount}&or_id=${result.or_id}&ticket_id=${result.ticket_id}&showtime_id=1&total_amount=${totalAmount}`;
+                } else {
+                    alert('Error: ' + result.message);
+                    console.error('Booking error:', result.message);
+                }
+            } catch (error) {
+                alert('Network error occurred. Please try again.');
+                console.error('Network error:', error);
+            } finally {
+                // Reset button state
+                doneBtn.disabled = false;
+                doneBtn.innerHTML = 'Done - Proceed to Payment';
+            }
         }
 
         // Close modal when clicking outside of it
@@ -706,7 +951,37 @@
         // Initialize display
         updateDisplay();
 
-       
+        // Add function to handle payment method update
+        async function updatePaymentMethod(ticketId, paymode, customerId) {
+            try {
+                // Debug log
+                console.log('Updating payment method:', { ticketId, paymode, customerId });
+                
+                const formData = new FormData();
+                formData.append('action', 'update_payment');
+                formData.append('ticket_id', ticketId);
+                formData.append('paymode', paymode);
+                formData.append('customer_id', customerId);
+
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                console.log('Update response:', result);
+
+                if (result.success) {
+                    return true;
+                } else {
+                    console.error('Payment update error:', result.message);
+                    return false;
+                }
+            } catch (error) {
+                console.error('Network error:', error);
+                return false;
+            }
+        }
     </script>
 </body>
 </html>

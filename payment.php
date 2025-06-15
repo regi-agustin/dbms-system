@@ -1,3 +1,84 @@
+<?php
+// Database configuration
+$host = 'localhost';
+$username = 'root';
+$password = '';
+$database = 'cinema';
+
+// Create connection
+$conn = new mysqli($host, $username, $password, $database);
+
+// Check connection
+if ($conn->connect_error) {
+    die("Connection failed: " . $conn->connect_error);
+}
+
+// Handle payment submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $response = array('success' => false, 'message' => '');
+    
+    try {
+        // Get data from POST request
+        $customer_id = $_POST['customer_id'] ?? null;
+        $or_id = $_POST['or_id'] ?? null;
+        $ticket_id = $_POST['ticket_id'] ?? null;
+        $showtime_id = $_POST['showtime_id'] ?? null;
+        $pay_mode = $_POST['pay_mode'] ?? null;
+        
+        if (!$ticket_id || !$pay_mode) {
+            throw new Exception("Missing ticket ID or payment mode");
+        }
+
+        // Start transaction
+        $conn->begin_transaction();
+        
+        try {
+            // Update ticket with payment information using only Ticket_ID
+            $stmt = $conn->prepare("UPDATE ticket SET PayMode = ? WHERE Ticket_ID = ?");
+            $stmt->bind_param("si", $pay_mode, $ticket_id);
+            
+            if (!$stmt->execute()) {
+                throw new Exception("Error updating payment information: " . $stmt->error);
+            }
+
+            // Check if any rows were affected
+            if ($stmt->affected_rows === 0) {
+                throw new Exception("No ticket found with ID: " . $ticket_id);
+            }
+            
+            $stmt->close();
+            
+            // Commit transaction
+            $conn->commit();
+            
+            $response['success'] = true;
+            $response['message'] = 'Payment information saved successfully';
+            
+        } catch (Exception $e) {
+            // Rollback transaction on error
+            $conn->rollback();
+            throw $e;
+        }
+        
+    } catch (Exception $e) {
+        $response['message'] = 'Error: ' . $e->getMessage();
+        error_log("Payment error: " . $e->getMessage());
+    }
+    
+    echo json_encode($response);
+    exit;
+}
+
+// Get parameters from URL
+$customer_id = $_GET['customer_id'] ?? '';
+$or_id = $_GET['or_id'] ?? '';
+$ticket_id = $_GET['ticket_id'] ?? '';
+$showtime_id = $_GET['showtime_id'] ?? '';
+$total = $_GET['total'] ?? '0.00';
+
+// Debug log for URL parameters
+error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID: $ticket_id, Showtime ID: $showtime_id, Total: $total");
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -505,15 +586,42 @@
             console.log('Form validation result:', isValid);
             
             if (isValid) {
-                // Update modal with current payment details
-                const totalAmount = document.getElementById('amount').value;
-                const paymentMethod = currentPaymentMethod === 'credit' ? 'Credit / Debit Card' : 'GCash';
-                
-                document.getElementById('modalAmount').textContent = totalAmount;
-                document.getElementById('modalPaymentMethod').textContent = paymentMethod;
-                
-                // Show confirmation modal
-                document.getElementById('confirmationModal').style.display = 'block';
+                const paymentData = {
+                    customer_id: '<?php echo $customer_id; ?>',
+                    or_id: '<?php echo $or_id; ?>',
+                    ticket_id: '<?php echo $ticket_id; ?>',
+                    showtime_id: '<?php echo $showtime_id; ?>',
+                    pay_mode: currentPaymentMethod === 'credit' ? 'Credit / Debit Card' : 'GCash'
+                };
+
+                // Send payment information to server
+                fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams(paymentData)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Update modal with current payment details
+                        const totalAmount = document.getElementById('amount').value;
+                        const paymentMethod = currentPaymentMethod === 'credit' ? 'Credit / Debit Card' : 'GCash';
+                        
+                        document.getElementById('modalAmount').textContent = totalAmount;
+                        document.getElementById('modalPaymentMethod').textContent = paymentMethod;
+                        
+                        // Show confirmation modal
+                        document.getElementById('confirmationModal').style.display = 'block';
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while processing your payment. Please try again.');
+                });
             }
         });
 
