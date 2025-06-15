@@ -111,42 +111,13 @@ error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID:
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
-        .payment-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-        }
-
         .section-title {
             font-size: 18px;
             font-weight: bold;
             color: #333;
-            margin: 0;
-        }
-
-        .payment-options {
-            display: flex;
-            gap: 10px;
-        }
-
-        .payment-option {
-            background-color: #fff;
-            border: 1px solid #ddd;
-            padding: 8px 16px;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .payment-option:hover {
-            background-color: #f8f8f8;
-        }
-
-        .payment-option.active {
-            background-color: #ff8c00;
-            color: white;
-            border-color: #e67300;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #ff8c00;
         }
 
         .form-group {
@@ -164,7 +135,7 @@ error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID:
             font-weight: normal;
         }
 
-        .form-group input {
+        .form-group input, .form-group select {
             flex: 1;
             padding: 12px;
             border: 1px solid #ccc;
@@ -173,7 +144,7 @@ error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID:
             font-family: Arial, sans-serif;
         }
 
-        .form-group input:focus {
+        .form-group input:focus, .form-group select:focus {
             outline: none;
             border-color: #ff8c00;
         }
@@ -188,11 +159,24 @@ error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID:
             margin: 30px 0;
         }
 
-        .order-summary-title {
-            font-size: 18px;
-            font-weight: bold;
-            color: #333;
+        .gcash-info {
+            background-color: #e8f5e8;
+            border: 1px solid #4caf50;
+            padding: 15px;
             margin-bottom: 20px;
+            border-radius: 4px;
+        }
+
+        .gcash-info h4 {
+            color: #2e7d32;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .gcash-info p {
+            color: #1b5e20;
+            margin-bottom: 3px;
+            font-size: 12px;
         }
 
         .button-container {
@@ -247,28 +231,6 @@ error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID:
             margin-top: -15px;
             margin-bottom: 15px;
             display: none;
-        }
-
-        .gcash-section {
-            display: none;
-        }
-
-        .gcash-info {
-            background-color: #e8f5e8;
-            border: 1px solid #4caf50;
-            padding: 20px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-
-        .gcash-info h3 {
-            color: #2e7d32;
-            margin-bottom: 10px;
-        }
-
-        .gcash-info p {
-            color: #1b5e20;
-            margin-bottom: 5px;
         }
 
         /* Modal Styles */
@@ -334,12 +296,6 @@ error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID:
                 padding: 20px;
             }
             
-            .payment-header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 15px;
-            }
-            
             .form-group {
                 flex-direction: column;
                 align-items: flex-start;
@@ -366,66 +322,62 @@ error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID:
 <body>
     <div class="form-container">
         <form id="paymentForm">
-            <div class="payment-header">
-                <div class="section-title">Payment Information</div>
-                <div class="payment-options">
-                    <button type="button" class="payment-option active" id="creditCardOption" onclick="switchPaymentMethod('credit')">Credit / Debit Card</button>
-                    <button type="button" class="payment-option" id="gcashOption" onclick="switchPaymentMethod('gcash')">GCash</button>
-                </div>
+
+
+            <!-- Credit/Debit Card Payment Info Section -->
+            <div class="section-title">Credit/Debit Card Payment Info</div>
+            
+            <div class="form-group">
+                <label for="cardNumber">Card Number:</label>
+                <input type="text" id="cardNumber" name="cardNumber" placeholder="1234 5678 9012 3456" maxlength="19">
             </div>
+            <div class="error-message" id="cardNumberError">Please enter a valid card number</div>
 
-            <!-- Credit Card Section -->
-            <div id="creditCardSection" class="credit-card-section">
-                <div class="form-group">
-                    <label for="cardNumber">Card Number:</label>
-                    <input type="text" id="cardNumber" name="cardNumber" placeholder="1234 5678 9012 3456" maxlength="19" required>
-                </div>
-                <div class="error-message" id="cardNumberError">Please enter a valid card number</div>
-
-                <div class="form-group">
-                    <label for="cardName">Cardholder Name:</label>
-                    <input type="text" id="cardName" name="cardName" required>
-                </div>
-                <div class="error-message" id="cardNameError">Please enter the cardholder name</div>
-
-                <div class="form-group">
-                    <label for="address">Address:</label>
-                    <input type="text" id="address" name="address" required>
-                </div>
-                <div class="error-message" id="addressError">Please enter your address</div>
-
-                <div class="form-group">
-                    <label for="city">City:</label>
-                    <input type="text" id="city" name="city" required>
-                </div>
-                <div class="error-message" id="cityError">Please enter your city</div>
+            <div class="form-group">
+                <label for="cardName">Cardholder Name:</label>
+                <input type="text" id="cardName" name="cardName">
             </div>
+            <div class="error-message" id="cardNameError">Please enter the cardholder name</div>
 
-            <!-- GCash Section -->
-            <div id="gcashSection" class="gcash-section">
-                <div class="gcash-info">
-                    <h3>Pay via GCash</h3>
-                    <p>Send payment to: <strong>09123456789</strong></p>
-                    <p>Account Name: <strong>Cinema Booking</strong></p>
-                    <p>Please enter your GCash reference number below after payment</p>
-                </div>
-
-                <div class="form-group">
-                    <label for="gcashRef">Reference Number:</label>
-                    <input type="text" id="gcashRef" name="gcashRef" placeholder="Enter GCash reference number" required>
-                </div>
-                <div class="error-message" id="gcashRefError">Please enter your GCash reference number</div>
-
-                <div class="form-group">
-                    <label for="gcashName">Sender Name:</label>
-                    <input type="text" id="gcashName" name="gcashName" placeholder="Name used in GCash" required>
-                </div>
-                <div class="error-message" id="gcashNameError">Please enter the sender name</div>
+            <div class="form-group">
+                <label for="address">Address:</label>
+                <input type="text" id="address" name="address">
             </div>
+            <div class="error-message" id="addressError">Please enter your address</div>
+
+            <div class="form-group">
+                <label for="city">City:</label>
+                <input type="text" id="city" name="city">
+            </div>
+            <div class="error-message" id="cityError">Please enter your city</div>
 
             <div class="section-divider"></div>
 
-            <div class="order-summary-title">Order Summary</div>
+            <!-- GCash Payment Info Section -->
+            <div class="section-title">GCash Payment Info</div>
+            
+            <div class="gcash-info">
+                <h4>Pay via GCash</h4>
+                <p>Send payment to: <strong>09123456789</strong></p>
+                <p>Account Name: <strong>Cinema Booking</strong></p>
+                <p>Please enter your GCash reference number below after payment</p>
+            </div>
+
+            <div class="form-group">
+                <label for="gcashRef">Reference Number:</label>
+                <input type="text" id="gcashRef" name="gcashRef" placeholder="Enter GCash reference number">
+            </div>
+            <div class="error-message" id="gcashRefError">Please enter your GCash reference number</div>
+
+            <div class="form-group">
+                <label for="gcashName">Sender Name:</label>
+                <input type="text" id="gcashName" name="gcashName" placeholder="Name used in GCash">
+            </div>
+            <div class="error-message" id="gcashNameError">Please enter the sender name</div>
+
+            <div class="section-divider"></div>
+
+            <div class="section-title">Order Summary</div>
             
             <div class="form-group">
                 <label for="amount">Total Amount:</label>
@@ -456,7 +408,7 @@ error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID:
     </div>
 
     <script>
-        let currentPaymentMethod = 'credit';
+        let currentPaymentMethod = '';
 
         // Get total amount from URL parameters
         function getTotalAmount() {
@@ -476,43 +428,28 @@ error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID:
             document.getElementById('amount').value = '₱' + totalAmount.toFixed(2);
         });
 
-        // Switch payment method
-        function switchPaymentMethod(method) {
-            currentPaymentMethod = method;
+        // Determine which payment method is being used based on filled fields
+        function determinePaymentMethod() {
+            const cardNumber = document.getElementById('cardNumber').value.trim();
+            const cardName = document.getElementById('cardName').value.trim();
+            const address = document.getElementById('address').value.trim();
+            const city = document.getElementById('city').value.trim();
             
-            // Update button styles
-            document.getElementById('creditCardOption').classList.remove('active');
-            document.getElementById('gcashOption').classList.remove('active');
+            const gcashRef = document.getElementById('gcashRef').value.trim();
+            const gcashName = document.getElementById('gcashName').value.trim();
             
-            if (method === 'credit') {
-                document.getElementById('creditCardOption').classList.add('active');
-                document.getElementById('creditCardSection').style.display = 'block';
-                document.getElementById('gcashSection').style.display = 'none';
-                
-                // Set required attributes for credit card fields
-                document.getElementById('cardNumber').required = true;
-                document.getElementById('cardName').required = true;
-                document.getElementById('address').required = true;
-                document.getElementById('city').required = true;
-                document.getElementById('gcashRef').required = false;
-                document.getElementById('gcashName').required = false;
+            const creditFieldsFilled = cardNumber || cardName || address || city;
+            const gcashFieldsFilled = gcashRef || gcashName;
+            
+            if (creditFieldsFilled && gcashFieldsFilled) {
+                return 'both'; // Both methods have data
+            } else if (creditFieldsFilled) {
+                return 'credit';
+            } else if (gcashFieldsFilled) {
+                return 'gcash';
             } else {
-                document.getElementById('gcashOption').classList.add('active');
-                document.getElementById('creditCardSection').style.display = 'none';
-                document.getElementById('gcashSection').style.display = 'block';
-                
-                // Set required attributes for GCash fields
-                document.getElementById('cardNumber').required = false;
-                document.getElementById('cardName').required = false;
-                document.getElementById('address').required = false;
-                document.getElementById('city').required = false;
-                document.getElementById('gcashRef').required = true;
-                document.getElementById('gcashName').required = true;
+                return 'none';
             }
-            
-            // Clear all error messages
-            const errorElements = document.querySelectorAll('.error-message');
-            errorElements.forEach(el => el.style.display = 'none');
         }
 
         // Card number formatting
@@ -539,13 +476,25 @@ error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID:
         document.getElementById('paymentForm').addEventListener('submit', function(e) {
             e.preventDefault();
             
-            console.log('Form submitted - currentPaymentMethod:', currentPaymentMethod);
-            
             // Reset all error messages
             const errorElements = document.querySelectorAll('.error-message');
             errorElements.forEach(el => el.style.display = 'none');
             
+            // Determine which payment method is being used
+            const paymentMethodUsed = determinePaymentMethod();
+            console.log('Payment method determined:', paymentMethodUsed);
+            
             let isValid = true;
+            
+            if (paymentMethodUsed === 'both') {
+                alert('Please fill out only one payment method (either Credit/Debit Card OR GCash)');
+                return;
+            } else if (paymentMethodUsed === 'none') {
+                alert('Please fill out at least one payment method');
+                return;
+            }
+            
+            currentPaymentMethod = paymentMethodUsed;
             
             if (currentPaymentMethod === 'credit') {
                 // Validate credit card fields
@@ -570,7 +519,7 @@ error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID:
                     showError('city', true);
                     isValid = false;
                 }
-            } else {
+            } else if (currentPaymentMethod === 'gcash') {
                 // Validate GCash fields
                 if (!document.getElementById('gcashRef').value.trim()) {
                     showError('gcashRef', true);
@@ -605,14 +554,14 @@ error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID:
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        // Update modal with current payment details
+                        
                         const totalAmount = document.getElementById('amount').value;
                         const paymentMethod = currentPaymentMethod === 'credit' ? 'Credit / Debit Card' : 'GCash';
                         
                         document.getElementById('modalAmount').textContent = totalAmount;
                         document.getElementById('modalPaymentMethod').textContent = paymentMethod;
                         
-                        // Show confirmation modal
+                        
                         document.getElementById('confirmationModal').style.display = 'block';
                     } else {
                         alert('Error: ' + data.message);
@@ -641,45 +590,46 @@ error_log("URL Parameters - Customer ID: $customer_id, OR ID: $or_id, Ticket ID:
             window.location.href = 'homepage.php';
         }
 
-        // Real-time validation
+        
         document.querySelectorAll('input').forEach(element => {
             element.addEventListener('blur', function() {
                 const fieldName = this.name;
+                const paymentMethodUsed = determinePaymentMethod();
                 let isValid = true;
                 
                 switch(fieldName) {
                     case 'cardNumber':
-                        if (currentPaymentMethod === 'credit') {
+                        if (paymentMethodUsed === 'credit') {
                             isValid = validateCardNumber(this.value);
                             showError('cardNumber', !isValid);
                         }
                         break;
                     case 'cardName':
-                        if (currentPaymentMethod === 'credit') {
+                        if (paymentMethodUsed === 'credit') {
                             isValid = this.value.trim() !== '';
                             showError('cardName', !isValid);
                         }
                         break;
                     case 'address':
-                        if (currentPaymentMethod === 'credit') {
+                        if (paymentMethodUsed === 'credit') {
                             isValid = this.value.trim() !== '';
                             showError('address', !isValid);
                         }
                         break;
                     case 'city':
-                        if (currentPaymentMethod === 'credit') {
+                        if (paymentMethodUsed === 'credit') {
                             isValid = this.value.trim() !== '';
                             showError('city', !isValid);
                         }
                         break;
                     case 'gcashRef':
-                        if (currentPaymentMethod === 'gcash') {
+                        if (paymentMethodUsed === 'gcash') {
                             isValid = this.value.trim() !== '';
                             showError('gcashRef', !isValid);
                         }
                         break;
                     case 'gcashName':
-                        if (currentPaymentMethod === 'gcash') {
+                        if (paymentMethodUsed === 'gcash') {
                             isValid = this.value.trim() !== '';
                             showError('gcashName', !isValid);
                         }

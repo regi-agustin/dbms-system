@@ -73,13 +73,20 @@
     .info-box h2 {
        text-align: center;
        margin-bottom: 20px;
-       font-size: 25px;
+       font-size: 28px;
        color:rgb(2, 74, 60); 
     }
 
     .info-box p {
        font-size: 15px;
        color: #444;
+    }
+
+    .info-box h3 {
+        font-size: 20px;
+        color: black;
+        font-weight: normal;  /* Removes bold */
+        font-family: 'Courier New', monospace;
     }
 
     .member-section {
@@ -159,9 +166,9 @@
   <div class="content">
     <div class="info-box">
       <h2>CINEMA TICKETING AND SALES MANAGEMENT SYSTEM</h2>
-      <p>
-       agdmfdmk ofdjuf gfydgfdfhdvj project des
-      </p>
+      <h3>
+       The Cinema Ticketing and Sales Management System is a web-based application developed using HTML, CSS, PHP, and HTML. It streamlines movie ticket reservation, seat selection, and payment monitoring, reducing manual work and improving data accuracy. The system uses a MySQL database for data storage and management, allowing customers to view schedules, select seats, and check out easily.
+  </h3>
     </div>
 
     <div class="member-section">
@@ -169,7 +176,7 @@
       <div class="member-grid">
 
         <div class="member-box">
-          <img src="images/josh.jpg" alt="Member 1">
+          <img src="images/m1.jpg" alt="Member 1">
           <p><span>Name:</span> Reginald O. Agustin </p>
           <p><span>Contact no:</span> 09498291275</p>
           <p><span>Email:</span> reginaldagustin.bsinfotech@gmail.com </p>
@@ -204,10 +211,10 @@
         </div>
 
         <div class="member-box">
-          <img src="  " alt="Member 6">
-       <p><span>Name:</span> adsd</p>
-          <p><span>Contact no:</span></p>
-          <p><span>Email:</span> </p>
+          <img src="images/m6.jfif" alt="Member 6">
+       <p><span>Name:</span> Ashley B. Naty </p>
+          <p><span>Contact no:</span> 09919884161 </p>
+          <p><span>Email:</span> naty.ashley.bsinfotech@gmail.com </p>
         </div>
 
       </div>
